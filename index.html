@@ -10,15 +10,12 @@
   <style>
     :root{
       --bg0:#03070c; --bg1:#06101a;
-      --card:#0b1622; --line:rgba(148,163,184,.18);
       --text:#d8e2ee; --muted:#9fb2c7; --muted2:#7f97b0;
       --accent:#38bdf8; --good:#22c55e; --warn:#f59e0b; --bad:#ef4444;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
       --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-      --radius:18px; --radius2:14px;
-      --shadow: 0 18px 60px rgba(0,0,0,.35);
-      --max: 1120px;
-      --ease: cubic-bezier(.2,.8,.2,1);
+      --radius:18px; --shadow: 0 18px 60px rgba(0,0,0,.35);
+      --max: 1120px; --ease: cubic-bezier(.2,.8,.2,1);
     }
     *{box-sizing:border-box}
     body{
@@ -279,7 +276,7 @@
       </div>
 
       <div class="links">
-        <a id="ChernOSLink" class="btn primary" href="#" target="_blank" rel="noreferrer">ChernOS <span class="tag">GitHub</span></a>
+        <a id="repoLink" class="btn primary" href="#" target="_blank" rel="noreferrer">Repo <span class="tag">GitHub</span></a>
         <a id="relLink" class="btn" href="#" target="_blank" rel="noreferrer">Releases <span class="tag">page</span></a>
       </div>
     </header>
@@ -287,7 +284,7 @@
     <section class="controls" aria-label="Filters">
       <div class="control">
         <label for="q">Search (tag / title / body / asset names)</label>
-        <input id="q" type="search" placeholder='Try: "v2.0.0", "beta", "iso", "calamares"...' />
+        <input id="q" type="search" placeholder='Try: "v2.0.0", "beta", "iso", "sha256"...' />
       </div>
       <div class="control">
         <label for="status">Status</label>
@@ -300,13 +297,13 @@
       </div>
       <div class="control">
         <label for="token">GitHub token (optional)</label>
-        <input id="token" type="password" placeholder="Paste a PAT for higher rate limits" />
+        <input id="token" type="password" placeholder="Paste a PAT if rate-limited / private repo" />
       </div>
     </section>
 
     <div class="hint">
-      Unauthenticated GitHub API is rate-limited (60 req/hour). Add a token if you hit limits. :contentReference[oaicite:3]{index=3}
-      <br/>This page reads releases + assets (using <code>browser_download_url</code>). :contentReference[oaicite:4]{index=4}
+      This page fetches GitHub Releases from <code>MasterB3ar/ChernOS</code> using the GitHub REST API.
+      If your repo is private or you hit API limits, paste a token above and reload.
     </div>
 
     <div class="sectionTitle">
@@ -315,14 +312,12 @@
     </div>
 
     <section class="grid" id="grid" aria-label="Release cards">
-      <div class="skeleton" id="loading">
-        Loading releases from GitHub API…
-      </div>
+      <div class="skeleton" id="loading">Loading releases from GitHub API…</div>
     </section>
 
     <footer class="footer">
       <div>© <span id="year"></span> ChernOS • Releases Browser</div>
-      <div>Tip: add checksum assets named <span style="color:#cfeeff">*.sha256</span> or <span style="color:#cfeeff">SHA256SUMS</span> to each release.</div>
+      <div>Upload checksum assets named <span style="color:#cfeeff">*.sha256</span> or <span style="color:#cfeeff">SHA256SUMS</span> to show SHA links.</div>
     </footer>
   </div>
 
@@ -339,31 +334,25 @@
 
   <script>
     // ===========================
-    // CONFIG: set your ChernOS here
+    // CONFIG (YOUR REPO)
     // ===========================
     const OWNER = "MasterB3ar";
-    const REPO  = "chernos";
+    const REPO  = "ChernOS";
 
-    // Optional: if you use "latest" tag without semantic tags, enable tag fallback
+    // Optional: if there are no GitHub Releases, fall back to tags
     const ENABLE_TAG_FALLBACK = true;
 
-    // Which assets count as "ISO"
-    const ISO_EXT = [".iso", ".img", ".qcow2", ".vhd", ".vhdx"];
+    // Treat these as downloadable image/ISO artifacts
+    const ISO_EXT = [".iso", ".img", ".qcow2", ".vhd", ".vhdx", ".zip"];
 
-    // Checksum asset patterns we try to match
-    const SHA_PATTERNS = [
-      /sha256/i,
-      /sha256sums/i,
-      /checksums?/i
-    ];
+    // Detect checksum assets by name
+    const SHA_PATTERNS = [/sha256/i, /sha256sums/i, /checksums?/i];
 
     // ===========================
-    // Helpers
+    // DOM + Helpers
     // ===========================
     const $ = (s, r=document) => r.querySelector(s);
-    const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
     const grid = $("#grid");
-    const loadingEl = $("#loading");
     const countEl = $("#count");
     const qEl = $("#q");
     const statusEl = $("#status");
@@ -376,9 +365,9 @@
 
     document.getElementById("year").textContent = new Date().getFullYear();
 
-    const ChernOSUrl = `https://github.com/${MasterB3ar}/${ChernOS}`;
-    $("#ChernOSLink").href = ChernOSUrl;
-    $("#relLink").href = `${ChernOSUrl}/releases`;
+    const repoUrl = `https://github.com/${OWNER}/${REPO}`;
+    $("#repoLink").href = repoUrl;
+    $("#relLink").href = `${repoUrl}/releases`;
 
     function esc(s){ return (s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -403,9 +392,7 @@
     }
 
     function inferStatus(release){
-      // prerelease -> beta
       if (release.prerelease) return "beta";
-      // draft -> archived (or hidden) — you can change this rule
       if (release.draft) return "archived";
       return "stable";
     }
@@ -421,27 +408,21 @@
     }
 
     function pickShaAssets(assets){
-      // returns array of checksum assets (could be multiple)
       return (assets||[]).filter(a => isShaAsset(a.name));
     }
 
     function findShaForIso(isoAsset, shaAssets){
-      // Heuristic: prefer a sha file whose name includes the iso name
       const isoName = (isoAsset?.name || "").toLowerCase();
       if (!isoName) return null;
-
-      const exact = shaAssets.find(a => (a.name||"").toLowerCase().includes(isoName));
+      const exact = (shaAssets||[]).find(a => (a.name||"").toLowerCase().includes(isoName));
       if (exact) return exact;
-
-      // Otherwise return first sha asset
-      return shaAssets[0] || null;
+      return (shaAssets||[])[0] || null;
     }
 
     function apiHeaders(){
       const headers = { "Accept": "application/vnd.github+json" };
       const t = tokenEl.value.trim();
       if (t) headers["Authorization"] = `Bearer ${t}`;
-      // GitHub recommends X-GitHub-Api-Version in examples; optional.
       headers["X-GitHub-Api-Version"] = "2022-11-28";
       return headers;
     }
@@ -450,27 +431,25 @@
       const res = await fetch(url, { headers: apiHeaders() });
       if (!res.ok){
         const text = await res.text().catch(()=> "");
-        throw new Error(`GitHub API error ${res.status}: ${text.slice(0,200)}`);
+        throw new Error(`GitHub API error ${res.status}: ${text.slice(0,220)}`);
       }
       return res.json();
     }
 
     // ===========================
-    // Data loading
+    // Load releases (+ tag fallback)
     // ===========================
-    let RELEASES = []; // normalized objects
+    let RELEASES = [];
 
     async function loadReleases(){
-      const apiBase = `https://api.github.com/ChernOSs/${MasterB3ar}/${ChernOS}`;
-      // Official endpoint: list releases :contentReference[oaicite:5]{index=5}
+      const apiBase = `https://api.github.com/repos/${OWNER}/${REPO}`;
       const releases = await ghGet(`${apiBase}/releases?per_page=100`);
 
-      // Normalize
       const normalized = releases.map(r => {
         const assets = (r.assets || []).map(a => ({
           name: a.name,
           size: a.size,
-          download: a.browser_download_url, // download URL is here :contentReference[oaicite:6]{index=6}
+          download: a.browser_download_url,
           content_type: a.content_type
         }));
 
@@ -481,7 +460,7 @@
           id: r.id,
           tag: r.tag_name,
           title: r.name || r.tag_name,
-          published_at: r.published_at || r.created_at,
+          published_at: r.published_at || r.created_at || "",
           html_url: r.html_url,
           body: r.body || "",
           status: inferStatus(r),
@@ -493,16 +472,14 @@
         };
       });
 
-      // Fallback: if there are no releases but tags exist
       if (ENABLE_TAG_FALLBACK && normalized.length === 0){
-        // tags endpoint exists; using it only when releases are empty
         const tags = await ghGet(`${apiBase}/tags?per_page=100`);
         return tags.map(t => ({
           id: `tag-${t.name}`,
           tag: t.name,
           title: t.name,
           published_at: "",
-          html_url: `${ChernOSUrl}/tree/${encodeURIComponent(t.name)}`,
+          html_url: `${repoUrl}/tree/${encodeURIComponent(t.name)}`,
           body: "Tag (no GitHub Release object found).",
           status: "archived",
           prerelease: false,
@@ -517,7 +494,7 @@
     }
 
     // ===========================
-    // Rendering + filtering
+    // Filter + Render
     // ===========================
     function matches(r, query, status){
       const q = (query||"").toLowerCase();
@@ -538,7 +515,7 @@
       countEl.textContent = String(filtered.length);
 
       if (filtered.length === 0){
-        grid.innerHTML = `<div class="skeleton">No releases match your filters.</div>`;
+        grid.innerHTML = `<div class="skeleton">No releases match your filters (or there are no published releases yet).</div>`;
         return;
       }
 
@@ -549,7 +526,10 @@
       const isoRows = (r.isoAssets || []).map(iso => {
         const sha = findShaForIso(iso, r.shaAssets || []);
         const sizeHuman = bytesToHuman(iso.size);
-        const shaLink = sha ? `<a class="link" href="${esc(sha.download)}" target="_blank" rel="noreferrer">SHA256</a>` : `<span class="pill">No SHA256 asset</span>`;
+        const shaLink = sha
+          ? `<a class="link" href="${esc(sha.download)}" target="_blank" rel="noreferrer">SHA256</a>`
+          : `<span class="pill">No SHA256 asset</span>`;
+
         return `
           <li class="asset">
             <div class="assetL">
@@ -564,12 +544,12 @@
         `;
       }).join("");
 
-      const otherSha = (r.shaAssets || []).length
+      const checksumPill = (r.shaAssets || []).length
         ? `<span class="pill">Checksum files: ${(r.shaAssets||[]).map(a=>a.name).slice(0,2).map(esc).join(", ")}${(r.shaAssets||[]).length>2 ? "…" : ""}</span>`
         : `<span class="pill">No checksum assets</span>`;
 
-      const summary = (r.body || "").trim().split("\n").find(l => l.trim().length > 0) || "No release notes body.";
-      const safeSummary = summary.length > 180 ? summary.slice(0,180) + "…" : summary;
+      const firstLine = (r.body || "").trim().split("\n").find(l => l.trim().length > 0) || "No release notes body.";
+      const safeSummary = firstLine.length > 180 ? firstLine.slice(0,180) + "…" : firstLine;
 
       return `
         <article class="card" data-tag="${esc(r.tag)}">
@@ -588,13 +568,21 @@
           <p class="desc">${esc(safeSummary)}</p>
 
           <ul class="assets">
-            ${isoRows || `<li class="asset"><div class="assetL"><b>No ISO assets found</b><span>Upload an .iso to the GitHub Release assets.</span></div><div class="assetR"><a class="link" href="${esc(r.html_url)}" target="_blank" rel="noreferrer">Open release</a></div></li>`}
+            ${isoRows || `<li class="asset">
+              <div class="assetL">
+                <b>No ISO assets found</b>
+                <span>Upload an .iso/.zip asset to the GitHub Release for this tag.</span>
+              </div>
+              <div class="assetR">
+                <a class="link" href="${esc(r.html_url)}" target="_blank" rel="noreferrer">Open release</a>
+              </div>
+            </li>`}
           </ul>
 
           <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
             <a class="link" href="${esc(r.html_url)}" target="_blank" rel="noreferrer">Release page</a>
             <button class="btn" data-action="details" data-tag="${esc(r.tag)}">Details <span class="tag">view</span></button>
-            ${otherSha}
+            ${checksumPill}
           </div>
         </article>
       `;
@@ -663,8 +651,7 @@
     statusEl.addEventListener("change", render);
 
     tokenEl.addEventListener("change", async ()=>{
-      // Re-fetch with token (higher rate limit for authenticated users; unauth is 60/hr) :contentReference[oaicite:7]{index=7}
-      await boot(true);
+      await boot();
     });
 
     modalClose.addEventListener("click", closeDetails);
@@ -672,26 +659,26 @@
     document.addEventListener("keydown", (e)=>{ if (e.key === "Escape" && modalBack.classList.contains("show")) closeDetails(); });
 
     // ===========================
-    // Boot
+    // Boot (with visible errors)
     // ===========================
-    async function boot(force=false){
-      grid.innerHTML = `<div class="skeleton" id="loading">Loading releases from GitHub API…</div>`;
+    async function boot(){
+      grid.innerHTML = `<div class="skeleton">Loading releases from GitHub API…</div>`;
       countEl.textContent = "0";
 
       try{
         RELEASES = await loadReleases();
         render();
       } catch(err){
-        const msg = (err && err.message) ? err.message : String(err);
+        console.error("Failed to load releases:", err);
         grid.innerHTML = `
           <div class="skeleton">
             <b>Failed to load releases.</b><br/>
-            ${esc(msg)}<br/><br/>
-            Tips:
+            ${esc(err?.message || String(err))}<br/><br/>
+            Checklist:
             <ul>
-              <li>Check MasterB3ar/ChernOS in the page config.</li>
-              <li>If you hit API rate limits, paste a GitHub token.</li>
-              <li>Make sure your releases have .iso assets and optional .sha256 assets.</li>
+              <li>Make sure <code>${esc(OWNER)}/${esc(REPO)}</code> exists and is public (or use a token).</li>
+              <li>Ensure you created a GitHub <b>Release</b> (not only a tag) and it is <b>published</b> (not draft).</li>
+              <li>Upload assets to the Release: <code>.iso</code> and optionally <code>.sha256</code>.</li>
             </ul>
           </div>
         `;
