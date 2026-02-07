@@ -341,8 +341,8 @@
     // ===========================
     // CONFIG: set your ChernOS here
     // ===========================
-    const MasterB3ar = "MasterB3ar";
-    const ChernOS  = "chernos";
+    const OWNER = "MasterB3ar";
+    const REPO  = "chernos";
 
     // Optional: if you use "latest" tag without semantic tags, enable tag fallback
     const ENABLE_TAG_FALLBACK = true;
@@ -376,7 +376,7 @@
 
     document.getElementById("year").textContent = new Date().getFullYear();
 
-    const ChernOSUrl = `https://github.com/${MasterB3ar}/${ChernOS}`;
+    const REPOUrl = `https://github.com/${MasterB3ar}/${ChernOS}`;
     $("#ChernOSLink").href = ChernOSUrl;
     $("#relLink").href = `${ChernOSUrl}/releases`;
 
